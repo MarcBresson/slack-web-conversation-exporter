@@ -2,6 +2,8 @@
 
 Export a Slack conversation's message history to a JSON file, straight from your browser — no bot setup, no API token, no build step.
 
+![Export panel](assets/ui-example.png)
+
 ## Features
 
 - Zero dependencies, zero build step — plain JavaScript that runs in the browser
