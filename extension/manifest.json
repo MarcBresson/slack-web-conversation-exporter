@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Slack Conversation Exporter",
+  "version": "1.0.0",
+  "description": "Toggle a panel to export the open Slack conversation's history back to a chosen date.",
+  "action": {
+    "default_title": "Toggle Slack export panel"
+  },
+  "permissions": ["storage", "unlimitedStorage"],
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://app.slack.com/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
