@@ -14,7 +14,7 @@
   "content_scripts": [
     {
       "matches": ["https://app.slack.com/*"],
-      "js": ["content-script.js"],
+      "js": ["html-export.js", "content-script.js"],
       "run_at": "document_idle"
     }
   ]

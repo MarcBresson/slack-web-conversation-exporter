@@ -20,8 +20,7 @@ function formatDate(ts) {
   return ts ? new Date(parseFloat(ts) * 1000).toLocaleDateString() : '?';
 }
 
-function download(filename, dataObj) {
-  const blob = new Blob([JSON.stringify(dataObj, null, 2)], { type: 'application/json' });
+function download(filename, blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -30,6 +29,14 @@ function download(filename, dataObj) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function downloadJson(filename, dataObj) {
+  download(filename, new Blob([JSON.stringify(dataObj, null, 2)], { type: 'application/json' }));
+}
+
+function downloadHtml(filename, dataObj) {
+  download(filename, new Blob([buildSlackExportHtml(dataObj)], { type: 'text/html' }));
 }
 
 async function loadEntries() {
@@ -55,7 +62,8 @@ function renderRow(key, entry) {
     <div class="row-title"></div>
     <div class="row-meta">${entry.channel} · ${entry.messageCount} messages · ${formatDate(entry.oldestTs)} – ${formatDate(entry.newestTs)} · ${formatBytes(sizeBytes)}</div>
     <div class="row-actions">
-      <button data-action="download">Download JSON</button>
+      <button data-action="download-json">Download JSON</button>
+      <button data-action="download-html">Download HTML</button>
       <button data-action="clear" class="danger">Clear cache</button>
     </div>
   `;
@@ -63,16 +71,27 @@ function renderRow(key, entry) {
   // Slack tab's document.title and shouldn't be interpreted as markup.
   row.querySelector('.row-title').textContent = title;
 
-  row.querySelector('[data-action="download"]').addEventListener('click', () => {
+  function buildExportData() {
     const messages = [...entry.messages].sort((a, b) => parseFloat(a.ts) - parseFloat(b.ts));
-    const filename = `slack-export-cache_${sanitizeFilename(title)}_${entry.channel}.json`;
-    download(filename, {
+    return {
       channel: entry.channel,
       cachedFrom: formatDate(entry.oldestTs),
       cachedThrough: formatDate(entry.newestTs),
       messageCount: entry.messageCount,
       messages,
-    });
+      threads: entry.threads || {},
+      users: entry.users || {},
+    };
+  }
+
+  row.querySelector('[data-action="download-json"]').addEventListener('click', () => {
+    const filename = `slack-export-cache_${sanitizeFilename(title)}_${entry.channel}.json`;
+    downloadJson(filename, buildExportData());
+  });
+
+  row.querySelector('[data-action="download-html"]').addEventListener('click', () => {
+    const filename = `slack-export-cache_${sanitizeFilename(title)}_${entry.channel}.html`;
+    downloadHtml(filename, buildExportData());
   });
 
   row.querySelector('[data-action="clear"]').addEventListener('click', async () => {

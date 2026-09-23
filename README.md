@@ -22,12 +22,14 @@ Both the console script and the extension work the same way:
 3. They call Slack's internal `conversations.history` endpoint directly, paging backward in time (200 messages per page) and deduplicating messages by timestamp (`ts`), until either the conversation's full history is exhausted or the date you chose is reached.
 4. The collected messages are sorted ascending by timestamp and written out as a downloaded JSON file.
 
+Two more resolution passes run after that, each fetching up to 15 requests in parallel: thread replies are fetched separately (`conversations.replies`, one call per thread) since `conversations.history` excludes them (`ignore_replies: true`), and every user ID referenced anywhere in the export (senders, repliers, reactors) is resolved to a name/avatar (`users.info`). Both are cached, so only new/changed threads and previously-unseen users are re-fetched on later exports of the same conversation.
+
 **Limitations:**
 
-- Only top-level channel/DM messages are fetched — thread replies are explicitly excluded (`ignore_replies: true`).
-- No separate channel list, user list, or file/attachment download step — you get whatever is embedded in the raw Slack message objects.
+- No separate channel list or file/attachment download step — you get whatever is embedded in the raw Slack message objects.
 - Only works on `app.slack.com` (not self-hosted / Enterprise Grid domains outside that host).
 - You must have the target conversation open and be logged into Slack in that browser tab.
+- Resolving thread replies and usernames adds extra API calls, so a conversation with many threads or many distinct participants takes longer to export the first time.
 
 ## Installation & usage
 
@@ -59,7 +61,7 @@ Loads the same exporter as an unpacked extension, plus a caching layer.
 Exports are downloaded as a single file — there is no CSV/SQLite output, and files are saved wherever your browser's default downloads location is (the tool doesn't create its own output folder structure). Both the panel and the cache manager offer two formats:
 
 - **JSON** — the raw data, as below.
-- **HTML** — a self-contained page with the same raw JSON embedded (in a `<script type="application/json">` tag) plus CSS/JS that renders it as a Slack-style conversation view: grouped messages, avatars (initials, since user profile images aren't fetched by this tool — bot/webhook icons render if present in the raw data), reactions, image/file thumbnails, call cards, and thread reply counts. It has no dependency on the extension or a live Slack session once downloaded, though private Slack-hosted image/file thumbnails only load if you're also logged into Slack in the browser you open it in. Since thread replies aren't fetched (see Limitations below), threads show a reply count only, not the replies themselves.
+- **HTML** — a self-contained page with the same raw JSON embedded (in a `<script type="application/json">` tag) plus CSS/JS that renders it as a Slack-style conversation view: grouped messages, avatars (resolved profile pictures where available, otherwise colored initials), real display names, reactions, image/file thumbnails, huddle cards (with duration), and clickable thread footers that expand inline to show the fetched replies. It has no dependency on the extension or a live Slack session once downloaded, though private Slack-hosted image/file thumbnails only load if you're also logged into Slack in the browser you open it in.
 
 ### Panel export (console script or extension panel)
 
@@ -70,7 +72,13 @@ Exports are downloaded as a single file — there is no CSV/SQLite output, and f
   "messageCount": 842,
   "messages": [
     /* raw Slack message objects, ascending order by ts */
-  ]
+  ],
+  "threads": {
+    /* thread replies, keyed by the parent message's ts */
+  },
+  "users": {
+    /* resolved { name, real_name, display_name, image_48 } per user ID referenced above */
+  }
 }
 ```
 
@@ -88,7 +96,13 @@ Downloads the full raw cache for a conversation (not bounded by a chosen date):
   "messageCount": 842,
   "messages": [
     /* raw Slack message objects, ascending order by ts */
-  ]
+  ],
+  "threads": {
+    /* thread replies, keyed by the parent message's ts */
+  },
+  "users": {
+    /* resolved { name, real_name, display_name, image_48 } per user ID referenced above */
+  }
 }
 ```
 
