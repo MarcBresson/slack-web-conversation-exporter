@@ -408,8 +408,8 @@
       <input id="slack-export-date" type="date" style="width:100%; box-sizing:border-box; margin-bottom:10px; padding:4px;">
       <div style="margin-bottom:8px;">Format:</div>
       <select id="slack-export-format" style="width:100%; box-sizing:border-box; margin-bottom:10px; padding:4px;">
-        <option value="json">JSON (raw data)</option>
         <option value="html">HTML (Slack-style view)</option>
+        <option value="json">JSON (raw data)</option>
       </select>
       <label style="display:flex; align-items:center; gap:6px; margin-bottom:10px; cursor:pointer;">
         <input id="slack-export-force" type="checkbox">
