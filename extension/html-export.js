@@ -17,7 +17,7 @@
 // to keep that file a single self-contained paste.
 
 function buildSlackExportHtml(dataObj) {
-  const title = 'Slack export — ' + (dataObj.channel || 'conversation');
+  const title = 'Slack export — ' + (dataObj.name || dataObj.channel || 'conversation');
   const jsonPayload = JSON.stringify(dataObj).replace(/</g, '\\u003c');
 
   return (
@@ -359,8 +359,10 @@ function slackExportRenderer() {
     USERS = data.users || {};
     THREADS = data.threads || {};
 
-    var headerHtml = '<div class="export-header"><div class="export-title">#' + escapeHtml(data.channel || '') +
+    var titleText = data.name ? data.name : ('#' + (data.channel || ''));
+    var headerHtml = '<div class="export-header"><div class="export-title">' + escapeHtml(titleText) +
       '</div><div class="export-meta">' + messages.length + ' messages' +
+      (data.exportedSince ? ' · since account creation ' + escapeHtml(data.exportedSince) : '') +
       (data.exportedUntil ? ' · exported back to ' + escapeHtml(data.exportedUntil) : '') +
       (data.cachedFrom ? ' · cached ' + escapeHtml(data.cachedFrom) + ' – ' + escapeHtml(data.cachedThrough) : '') +
       '</div><div class="export-note">Click a thread\'s reply count to expand its replies, where fetched — older exports may only show a count.</div></div>';
