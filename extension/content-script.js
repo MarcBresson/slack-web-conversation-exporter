@@ -76,16 +76,38 @@
     }
   }
 
-  // Slack's web client returns `user.created` (unix seconds) from users.info
-  // even though the public docs omit it. That is the account creation time.
+  function unixSeconds(value) {
+    let n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    if (n > 1e12) n = Math.floor(n / 1000);
+    return n;
+  }
+
+  // users.info sometimes includes created / date_created / first_login, and
+  // Slack Atlas workspaces may include profile.start_date. None of these are
+  // guaranteed. Returns 0 when Slack does not say when the account was created.
+  function accountCreatedFromUser(user) {
+    if (!user) return 0;
+    const enterprise = user.enterprise_user || {};
+    const direct = unixSeconds(user.created)
+      || unixSeconds(user.date_created)
+      || unixSeconds(user.first_login)
+      || unixSeconds(enterprise.created)
+      || unixSeconds(enterprise.date_created);
+    if (direct) return direct;
+    const start = user.profile && user.profile.start_date;
+    if (typeof start === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+      const ts = new Date(`${start}T00:00:00`).getTime() / 1000;
+      if (ts > 0) return ts;
+    }
+    return 0;
+  }
+
   async function getAccountCreatedTs(token) {
     const auth = await slackApi('auth.test', { token });
     if (!auth.user_id) throw new Error('Slack auth.test did not return a user id.');
     const info = await slackApi('users.info', { token, user: auth.user_id });
-    let created = Number(info.user && info.user.created);
-    if (created > 1e12) created = Math.floor(created / 1000);
-    if (!created) throw new Error('Slack did not return an account creation date for this user.');
-    return created;
+    return accountCreatedFromUser(info.user);
   }
 
   async function listConversations(token, shouldStop) {
@@ -648,11 +670,13 @@
       try {
         const token = getToken();
         const createdTs = await getAccountCreatedTs(token);
-        const sinceDate = formatTsDate(createdTs);
+        const sinceDate = createdTs ? formatTsDate(createdTs) : 'beginning';
         const forceResync = forceResyncInput.checked;
         const format = formatSelect.value;
 
-        statusEl.textContent = 'Listing conversations…';
+        statusEl.textContent = createdTs
+          ? 'Listing conversations…'
+          : 'Slack did not return an account creation date — exporting the full history of each conversation.\nListing conversations…';
         const conversations = await listConversations(token, () => stopRequested || !panel.isConnected);
         if (stopRequested) {
           stopped = true;
@@ -710,7 +734,7 @@
               const exportData = {
                 channel: conv.id,
                 name: title,
-                exportedSince: sinceDate,
+                exportedSince: createdTs ? sinceDate : undefined,
                 messageCount: messages.length,
                 messages,
                 threads: exportedThreads,
