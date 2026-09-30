@@ -49,6 +49,105 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function stoppedError() {
+    const err = new Error('Stopped.');
+    err.code = 'STOPPED';
+    return err;
+  }
+
+  async function slackApi(method, params) {
+    for (;;) {
+      const res = await fetch('/api/' + method, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(params),
+        credentials: 'same-origin',
+      });
+
+      if (res.status === 429) {
+        const retryAfter = Number(res.headers.get('Retry-After') || '5');
+        await sleep(retryAfter * 1000);
+        continue;
+      }
+
+      const data = await res.json();
+      if (!data.ok) throw new Error(`Slack API error (${method}): ${data.error || 'unknown'}`);
+      return data;
+    }
+  }
+
+  function unixSeconds(value) {
+    let n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    if (n > 1e12) n = Math.floor(n / 1000);
+    return n;
+  }
+
+  // users.info sometimes includes created / date_created / first_login, and
+  // Slack Atlas workspaces may include profile.start_date. None of these are
+  // guaranteed. Returns 0 when Slack does not say when the account was created.
+  function accountCreatedFromUser(user) {
+    if (!user) return 0;
+    const enterprise = user.enterprise_user || {};
+    const direct = unixSeconds(user.created)
+      || unixSeconds(user.date_created)
+      || unixSeconds(user.first_login)
+      || unixSeconds(enterprise.created)
+      || unixSeconds(enterprise.date_created);
+    if (direct) return direct;
+    const start = user.profile && user.profile.start_date;
+    if (typeof start === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+      const ts = new Date(`${start}T00:00:00`).getTime() / 1000;
+      if (ts > 0) return ts;
+    }
+    return 0;
+  }
+
+  async function getAccountCreatedTs(token) {
+    const auth = await slackApi('auth.test', { token });
+    if (!auth.user_id) throw new Error('Slack auth.test did not return a user id.');
+    const info = await slackApi('users.info', { token, user: auth.user_id });
+    return accountCreatedFromUser(info.user);
+  }
+
+  async function listConversations(token, shouldStop) {
+    const all = [];
+    let cursor = '';
+    for (;;) {
+      if (shouldStop && shouldStop()) throw stoppedError();
+      const params = {
+        token,
+        types: 'public_channel,private_channel,mpim,im',
+        exclude_archived: 'false',
+        limit: '200',
+      };
+      if (cursor) params.cursor = cursor;
+      const data = await slackApi('users.conversations', params);
+      all.push(...(data.channels || []));
+      cursor = (data.response_metadata && data.response_metadata.next_cursor) || '';
+      if (!cursor) break;
+      await sleep(300);
+    }
+    return all;
+  }
+
+  function formatTsDate(ts) {
+    const d = new Date(ts * 1000);
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${month}-${day}`;
+  }
+
+  function conversationLabel(conv, users) {
+    if (conv.is_im) {
+      const u = users && users[conv.user];
+      const name = u && (u.display_name || u.real_name || u.name);
+      return name ? `dm-${name}` : `dm-${conv.user || conv.id}`;
+    }
+    if (conv.is_mpim) return conv.name || `group-${conv.id}`;
+    return conv.name || conv.id;
+  }
+
   const FETCH_CONCURRENCY = 15;
 
   // Runs `worker` over `items` with at most `limit` calls in flight at once.
@@ -107,13 +206,14 @@
   // fetched. Rate limiting is still handled per-request inside
   // fetchThreadReplies, so a burst of 429s just slows the affected workers
   // down rather than failing the export.
-  async function resolveThreads(token, channel, messages, knownThreads, onProgress) {
+  async function resolveThreads(token, channel, messages, knownThreads, onProgress, shouldStop) {
     const threads = { ...knownThreads };
     const parents = messages.filter((m) => m.reply_count && m.thread_ts === m.ts);
     const stale = parents.filter((m) => !threads[m.ts] || threads[m.ts].length !== m.reply_count);
 
     let completed = 0;
     await mapWithConcurrency(stale, FETCH_CONCURRENCY, async (parent) => {
+      if (shouldStop && shouldStop()) throw stoppedError();
       const replies = await fetchThreadReplies(token, channel, parent.ts);
       threads[parent.ts] = replies;
       completed += 1;
@@ -172,12 +272,13 @@
   // Resolves display names/avatars for every user ID in the export (up to
   // FETCH_CONCURRENCY at once), reusing `knownUsers` (from cache) so
   // re-exports only fetch newly-seen users.
-  async function resolveUsers(token, messages, threads, knownUsers, onProgress) {
+  async function resolveUsers(token, messages, threads, knownUsers, onProgress, shouldStop) {
     const users = { ...knownUsers };
     const ids = collectUserIds(messages, threads).filter((id) => !users[id]);
 
     let completed = 0;
     await mapWithConcurrency(ids, FETCH_CONCURRENCY, async (id) => {
+      if (shouldStop && shouldStop()) throw stoppedError();
       const info = await fetchUserInfo(token, id);
       if (info) users[id] = info;
       completed += 1;
@@ -221,7 +322,7 @@
   // the full fetch, the forward-fill (bounded by the cache's newest ts),
   // and the backfill (seeded from the cache's oldest ts) — see
   // exportConversation below.
-  async function fetchBackwardUntil(token, channel, { startLatest, untilTs, onProgress } = {}) {
+  async function fetchBackwardUntil(token, channel, { startLatest, untilTs, onProgress, shouldStop } = {}) {
     const byTs = new Map();
     let cursor;
     let latest = startLatest;
@@ -229,6 +330,7 @@
     let stoppedOnBound = false;
 
     for (;;) {
+      if (shouldStop && shouldStop()) throw stoppedError();
       page += 1;
       const data = await fetchPage(token, channel, { cursor, latest });
       const msgs = data.messages || [];
@@ -286,10 +388,10 @@
     });
   }
 
-  async function persistCache(channel, merged, threads, users) {
+  async function persistCache(channel, merged, threads, users, title) {
     await saveCache(channel, {
       channel,
-      title: document.title,
+      title: title || document.title,
       ...computeBounds(merged),
       messageCount: merged.size,
       messages: [...merged.values()],
@@ -298,7 +400,7 @@
     });
   }
 
-  async function exportConversation({ token, channel, untilTs, forceResync, onProgress }) {
+  async function exportConversation({ token, channel, untilTs, forceResync, onProgress, title, shouldStop }) {
     const existingCache = await loadCache(channel);
     const cache = forceResync ? null : existingCache;
     onProgress({ phase: 'cache-status', cache, existingCache, forceResync, untilTs });
@@ -310,15 +412,17 @@
     if (!cache) {
       const { byTs: map } = await fetchBackwardUntil(token, channel, {
         untilTs,
+        shouldStop,
         onProgress: (p) => onProgress({ phase: 'full', ...p }),
       });
       merged = map;
-      await persistCache(channel, merged, knownThreads, knownUsers);
+      await persistCache(channel, merged, knownThreads, knownUsers, title);
     } else {
       merged = new Map(cache.messages.map((m) => [m.ts, m]));
 
       const { byTs: freshMap, stoppedOnBound } = await fetchBackwardUntil(token, channel, {
         untilTs: parseFloat(cache.newestTs),
+        shouldStop,
         onProgress: (p) => onProgress({ phase: 'forward-fill', ...p }),
       });
       if (!stoppedOnBound) {
@@ -327,27 +431,30 @@
         );
       }
       for (const [ts, m] of freshMap) merged.set(ts, m);
-      await persistCache(channel, merged, knownThreads, knownUsers);
+      await persistCache(channel, merged, knownThreads, knownUsers, title);
 
       if (untilTs < parseFloat(cache.oldestTs)) {
         const { byTs: olderMap } = await fetchBackwardUntil(token, channel, {
           startLatest: cache.oldestTs,
           untilTs,
+          shouldStop,
           onProgress: (p) => onProgress({ phase: 'backfill', ...p }),
         });
         for (const [ts, m] of olderMap) merged.set(ts, m);
-        await persistCache(channel, merged, knownThreads, knownUsers);
+        await persistCache(channel, merged, knownThreads, knownUsers, title);
       }
     }
 
     const allMessages = [...merged.values()];
     const threads = await resolveThreads(token, channel, allMessages, knownThreads, (p) =>
-      onProgress({ phase: 'threads', ...p })
+      onProgress({ phase: 'threads', ...p }),
+      shouldStop
     );
     const users = await resolveUsers(token, allMessages, threads, knownUsers, (p) =>
-      onProgress({ phase: 'users', ...p })
+      onProgress({ phase: 'users', ...p }),
+      shouldStop
     );
-    await persistCache(channel, merged, threads, users);
+    await persistCache(channel, merged, threads, users, title);
 
     return { messages: filterAndSort(merged, untilTs), threads, users };
   }
@@ -385,7 +492,7 @@
       position: fixed; bottom: 20px; right: 20px; z-index: 999999;
       background: #1a1d21; color: #fff; font-family: -apple-system, sans-serif;
       font-size: 13px; padding: 14px 16px; border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.4); width: 260px; position: fixed;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4); width: 300px; position: fixed;
     `;
 
     let detectedChannel = 'unknown';
@@ -416,11 +523,18 @@
         Force full re-sync (ignore cache, refetch everything)
       </label>
       <button id="slack-export-btn" style="width:100%; padding:6px; cursor:pointer;">Export</button>
+      <button id="slack-export-all-btn" style="width:100%; padding:6px; cursor:pointer; margin-top:8px;">Export all conversations</button>
+      <div style="margin-top:6px; opacity:0.6; font-size:12px;">Every channel, DM, and group DM you belong to, back to your account creation date. One file per conversation. Empty ones are skipped.</div>
+      <button id="slack-export-stop" style="display:none; width:100%; padding:6px; cursor:pointer; margin-top:8px;">Stop</button>
       <div id="slack-export-status" style="margin-top:8px; font-size:12px; opacity:0.85; white-space:pre-wrap;">${detectError}</div>
     `;
     document.body.appendChild(panel);
 
-    panel.querySelector('#slack-export-close').addEventListener('click', () => panel.remove());
+    let stopRequested = false;
+    panel.querySelector('#slack-export-close').addEventListener('click', () => {
+      stopRequested = true;
+      panel.remove();
+    });
 
     panel.querySelector('#slack-export-view-cache').addEventListener('click', (e) => {
       e.preventDefault();
@@ -430,9 +544,19 @@
     const cacheInfoEl = panel.querySelector('#slack-export-cache-info');
     const statusEl = panel.querySelector('#slack-export-status');
     const btn = panel.querySelector('#slack-export-btn');
+    const allBtn = panel.querySelector('#slack-export-all-btn');
+    const stopBtn = panel.querySelector('#slack-export-stop');
     const dateInput = panel.querySelector('#slack-export-date');
     const formatSelect = panel.querySelector('#slack-export-format');
     const forceResyncInput = panel.querySelector('#slack-export-force');
+
+    function setControlsDisabled(disabled) {
+      btn.disabled = disabled;
+      allBtn.disabled = disabled;
+      dateInput.disabled = disabled;
+      formatSelect.disabled = disabled;
+      forceResyncInput.disabled = disabled;
+    }
 
     if (detectedChannel === 'unknown') {
       cacheInfoEl.textContent = '';
@@ -448,10 +572,7 @@
         return;
       }
 
-      btn.disabled = true;
-      dateInput.disabled = true;
-      formatSelect.disabled = true;
-      forceResyncInput.disabled = true;
+      setControlsDisabled(true);
       statusEl.textContent = 'Starting…';
 
       try {
@@ -524,10 +645,129 @@
         statusEl.textContent = `Error: ${err.message}`;
         console.error(err);
       } finally {
-        btn.disabled = false;
-        dateInput.disabled = false;
-        formatSelect.disabled = false;
-        forceResyncInput.disabled = false;
+        setControlsDisabled(false);
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      stopRequested = true;
+      stopBtn.disabled = true;
+      statusEl.textContent = 'Stopping after the current request…';
+    });
+
+    allBtn.addEventListener('click', async () => {
+      stopRequested = false;
+      stopBtn.disabled = false;
+      stopBtn.style.display = 'block';
+      setControlsDisabled(true);
+      statusEl.textContent = 'Reading your account creation date…\nIf the browser asks, allow multiple downloads.';
+
+      let exported = 0;
+      let skipped = 0;
+      let failed = 0;
+      let stopped = false;
+
+      try {
+        const token = getToken();
+        const createdTs = await getAccountCreatedTs(token);
+        const sinceDate = createdTs ? formatTsDate(createdTs) : 'beginning';
+        const forceResync = forceResyncInput.checked;
+        const format = formatSelect.value;
+
+        statusEl.textContent = createdTs
+          ? 'Listing conversations…'
+          : 'Slack did not return an account creation date — exporting the full history of each conversation.\nListing conversations…';
+        const conversations = await listConversations(token, () => stopRequested || !panel.isConnected);
+        if (stopRequested) {
+          stopped = true;
+        } else {
+          for (let i = 0; i < conversations.length; i++) {
+            if (stopRequested || !panel.isConnected) {
+              stopped = true;
+              break;
+            }
+            const conv = conversations[i];
+            let title = conversationLabel(conv);
+            let prefix = `${i + 1}/${conversations.length} ${title} — `;
+
+            try {
+              if (conv.is_im && conv.user) {
+                const info = await fetchUserInfo(token, conv.user);
+                if (info) title = conversationLabel(conv, { [conv.user]: info });
+                prefix = `${i + 1}/${conversations.length} ${title} — `;
+              }
+              const { messages, threads, users } = await exportConversation({
+                token,
+                channel: conv.id,
+                untilTs: createdTs,
+                forceResync,
+                title,
+                shouldStop: () => stopRequested || !panel.isConnected,
+                onProgress: (info) => {
+                  if (info.phase === 'threads') {
+                    statusEl.textContent = `${prefix}thread replies ${info.index}/${info.total}`;
+                    return;
+                  }
+                  if (info.phase === 'users') {
+                    statusEl.textContent = `${prefix}usernames ${info.index}/${info.total}`;
+                    return;
+                  }
+                  if (info.phase === 'cache-status') {
+                    statusEl.textContent = `${prefix}checking cache…`;
+                    return;
+                  }
+                  const oldestStr = info.oldestTs ? new Date(info.oldestTs * 1000).toLocaleDateString() : '?';
+                  statusEl.textContent = `${prefix}page ${info.page} (${info.total} messages, oldest ${oldestStr})`;
+                },
+              });
+
+              if (conv.is_im && users[conv.user]) title = conversationLabel(conv, users);
+              if (!messages.length) {
+                skipped += 1;
+                continue;
+              }
+
+              const exportedThreads = {};
+              for (const message of messages) {
+                if (threads[message.ts]) exportedThreads[message.ts] = threads[message.ts];
+              }
+              const exportData = {
+                channel: conv.id,
+                name: title,
+                exportedSince: createdTs ? sinceDate : undefined,
+                messageCount: messages.length,
+                messages,
+                threads: exportedThreads,
+                users,
+              };
+              const filename = `slack-export_${sanitizeFilename(title)}_${conv.id}_since-${sinceDate}.${format}`;
+              if (format === 'html') downloadHtml(filename, exportData);
+              else downloadJson(filename, exportData);
+              exported += 1;
+            } catch (err) {
+              if (err.code === 'STOPPED') {
+                stopped = true;
+                break;
+              }
+              failed += 1;
+              console.error(`slack-export: ${conv.id}`, err);
+              statusEl.textContent = `${prefix}failed (${err.message}). Continuing…`;
+            }
+          }
+        }
+
+        const summary = `${exported} exported, ${skipped} empty skipped, ${failed} failed`;
+        statusEl.textContent = stopped ? `Stopped — ${summary}` : `Done — ${summary}`;
+      } catch (err) {
+        if (err.code === 'STOPPED') {
+          statusEl.textContent = `Stopped — ${exported} exported, ${skipped} empty skipped, ${failed} failed`;
+        } else {
+          statusEl.textContent = `Error: ${err.message}`;
+          console.error(err);
+        }
+      } finally {
+        stopBtn.style.display = 'none';
+        setControlsDisabled(false);
       }
     });
   }
