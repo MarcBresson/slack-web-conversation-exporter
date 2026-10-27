@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Slack Conversation Exporter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Extract your slack conversation history back to a chosen date.",
   "action": {
     "default_title": "Toggle Slack export panel",
