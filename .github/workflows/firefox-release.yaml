@@ -1,0 +1,57 @@
+name: Release Firefox extension
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: extension
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install web-ext
+        run: npm install --global web-ext
+
+      - name: Validate extension
+        run: web-ext lint
+
+      - name: Package extension
+        run: web-ext build --overwrite-dest
+
+      - name: Sign and publish to AMO
+        run: |
+          web-ext sign \
+            --channel=listed \
+            --amo-metadata=amo-metadata.json \
+            --source-dir=. \
+            --artifacts-dir=web-ext-artifacts \
+            --api-key="$AMO_JWT_ISSUER" \
+            --api-secret="$AMO_JWT_SECRET"
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+
+      - name: Publish signed XPI as GitHub Release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: extension/web-ext-artifacts/*.xpi
+          fail_on_unmatched_files: true
+          generate_release_notes: true

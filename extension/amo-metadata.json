@@ -1,0 +1,11 @@
+{
+    "summary": {
+        "en-US": "Extract your slack conversation history back to a chosen date."
+    },
+    "categories": [
+        "other"
+    ],
+    "version": {
+        "license": "EUPL-1.2"
+    }
+}
