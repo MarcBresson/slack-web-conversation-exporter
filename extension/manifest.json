@@ -4,7 +4,11 @@
   "version": "1.0.0",
   "description": "Extract your slack conversation history back to a chosen date.",
   "action": {
-    "default_title": "Toggle Slack export panel"
+    "default_title": "Toggle Slack export panel",
+    "default_icon": {
+      "64": "icons/icon-64.png",
+      "32": "icons/icon-32.png"
+    }
   },
   "permissions": [
     "storage",
@@ -32,5 +36,10 @@
     "gecko": {
       "id": "slack-exporter@marcbresson"
     }
+  },
+  "icons": {
+    "32": "icons/icon-32.png",
+    "64": "icons/icon-64.png",
+    "128": "icons/icon-128.png"
   }
 }

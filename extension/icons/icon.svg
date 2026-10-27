@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="512"
+   height="512"
+   viewBox="0 0 512 512"
+   role="img"
+   aria-labelledby="title desc"
+   version="1.1"
+   id="svg12"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   sodipodi:docname="slack-conversation-extractor.svg"
+   inkscape:export-filename="icon-128.png"
+   inkscape:export-xdpi="24"
+   inkscape:export-ydpi="24"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.2244652"
+     inkscape:cx="245.8216"
+     inkscape:cy="262.15527"
+     inkscape:window-width="1470"
+     inkscape:window-height="895"
+     inkscape:window-x="0"
+     inkscape:window-y="33"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg12"
+     inkscape:showpageshadow="2" />
+  <rect
+     x="16"
+     y="16"
+     width="480"
+     height="480"
+     rx="112"
+     fill="#202A36"
+     id="rect2"
+     style="display:inline" />
+  <rect
+     x="17"
+     y="17"
+     width="478"
+     height="478"
+     rx="111"
+     fill="none"
+     stroke="#ffffff"
+     stroke-opacity="0.09"
+     stroke-width="2"
+     id="rect3"
+     style="display:inline" />
+  <g
+     transform="translate(62,65)"
+     stroke-linecap="round"
+     stroke-width="28"
+     fill="none"
+     id="g10">
+    <path
+       d="M 76,20 V 146"
+       stroke="#36c5f0"
+       id="path3" />
+    <path
+       d="M 126,8 V 134"
+       stroke="#36c5f0"
+       id="path4" />
+    <path
+       d="M 20,76 H 146"
+       stroke="#2eb67d"
+       id="path5" />
+    <path
+       d="M 8,126 H 134"
+       stroke="#2eb67d"
+       id="path6" />
+    <path
+       d="M 168,20 V 146"
+       stroke="#e01e5a"
+       id="path7" />
+    <path
+       d="M 218,8 V 134"
+       stroke="#e01e5a"
+       id="path8" />
+    <path
+       d="M 20,168 H 146"
+       stroke="#ecb22e"
+       id="path9" />
+    <path
+       d="M 8,218 H 134"
+       stroke="#ecb22e"
+       id="path10" />
+  </g>
+  <g
+     id="g13"
+     style="stroke:none">
+    <circle
+       cx="346"
+       cy="346"
+       r="116"
+       fill="#111820"
+       stroke="#FFFFFF"
+       stroke-opacity=".12"
+       stroke-width="3"
+       id="circle10"
+       style="opacity:0.910581;fill:#556f90;fill-opacity:1;stroke:none;stroke-width:1;stroke-dasharray:none;stroke-opacity:1" />
+    <circle
+       cx="346"
+       cy="346"
+       r="99"
+       fill="#FFFFFF"
+       id="circle11"
+       style="fill:#202a36;fill-opacity:1;stroke:none;stroke-width:1;stroke-dasharray:none;stroke-opacity:1" />
+    <path
+       d="m 291,361 v 21 q 0,10 10,10 h 90 q 10,0 10,-10 v -21"
+       fill="none"
+       stroke="#263442"
+       stroke-width="17"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       id="path11"
+       style="fill:none;fill-opacity:1;stroke:#556f90;stroke-width:18;stroke-dasharray:none;stroke-opacity:1" />
+    <path
+       d="m 346,365 v -79 m -31,31 31,-31 31,31"
+       fill="none"
+       stroke="#263442"
+       stroke-width="19"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       id="path12"
+       style="fill:none;fill-opacity:1;stroke:#556f90;stroke-width:18;stroke-dasharray:none;stroke-opacity:1" />
+  </g>
+</svg>
